@@ -1,9 +1,16 @@
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { db } from '../config/database.js';
 import { supabase, supabaseAuth } from '../config/supabase.js';
 import { JWT_SECRET, invalidateSessionCache, invalidateUserSessions } from '../middleware/auth.js';
 import { logSecurityEvent } from '../utils/auditLogger.js';
+import { 
+  claimUserSession, 
+  releaseUserSession, 
+  extractSessionIdFromToken, 
+  invalidateSessionLockCache 
+} from '../services/sessionLockService.js';
 
 export const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -75,11 +82,52 @@ async function loginSqlite(req, res, next) {
       });
     }
 
+    // Generate unique session identifier for this device login
+    const sessionId = crypto.randomUUID();
     const token = jwt.sign(
-      { id: user.id, role: user.role },
+      { id: user.id, role: user.role, sessionId },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
+
+    const ip = req.ip || req.headers['x-forwarded-for'] || null;
+    const ua = req.headers['user-agent'] || null;
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // Atomically claim single active session slot
+    const sessionClaim = await claimUserSession({
+      userId: user.id,
+      sessionId,
+      expiresAt,
+      ip,
+      ua
+    });
+
+    if (!sessionClaim.success) {
+      if (sessionClaim.code === 'SESSION_ALREADY_ACTIVE') {
+        logSecurityEvent({
+          userId: user.id,
+          eventType: 'LOGIN_CONFLICT',
+          resourceType: 'user',
+          resourceId: user.id,
+          req,
+          status: 'DENIED',
+          details: 'Account already active on another device'
+        });
+
+        return res.status(409).json({
+          success: false,
+          code: 'SESSION_ALREADY_ACTIVE',
+          message: 'This account is already logged in on another device. Please log out from that device before trying again.',
+          error: 'This account is already logged in on another device. Please log out from that device before trying again.'
+        });
+      }
+
+      return res.status(500).json({
+        success: false,
+        error: 'Authentication failed due to session verification error.'
+      });
+    }
 
     res.cookie('pasconix_token', token, COOKIE_OPTIONS);
 
@@ -226,6 +274,58 @@ async function loginSupabase(req, res, next) {
         error: 'Login failed: unable to establish session. Please verify your email or contact support.'
       });
     }
+
+    const decoded = jwt.decode(token);
+    const sessionId = decoded?.session_id || token;
+    const ip = req.ip || req.headers['x-forwarded-for'] || null;
+    const ua = req.headers['user-agent'] || null;
+    const expiresAt = decoded?.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    // Atomically claim single active session slot
+    const sessionClaim = await claimUserSession({
+      userId: profile.id,
+      sessionId,
+      expiresAt,
+      ip,
+      ua
+    });
+
+    if (!sessionClaim.success) {
+      if (sessionClaim.code === 'SESSION_ALREADY_ACTIVE') {
+        // Safely revoke the newly created losing session without invalidating Device A's winning session
+        try {
+          if (supabase && typeof supabase.auth?.admin?.signOut === 'function') {
+            await supabase.auth.admin.signOut(token, 'local');
+          }
+        } catch (cleanupErr) {
+          console.warn('Losing session cleanup notice:', cleanupErr.message);
+        }
+
+        logSecurityEvent({
+          userId: profile.id,
+          eventType: 'LOGIN_CONFLICT',
+          resourceType: 'user',
+          resourceId: profile.id,
+          req,
+          status: 'DENIED',
+          details: 'Account already active on another device'
+        });
+
+        return res.status(409).json({
+          success: false,
+          code: 'SESSION_ALREADY_ACTIVE',
+          message: 'This account is already logged in on another device. Please log out from that device before trying again.',
+          error: 'This account is already logged in on another device. Please log out from that device before trying again.'
+        });
+      }
+
+      // Fail closed on database/verification error
+      return res.status(500).json({
+        success: false,
+        error: 'Authentication failed due to session verification error.'
+      });
+    }
+
     res.cookie('pasconix_token', token, COOKIE_OPTIONS);
 
     const safeUser = {
@@ -266,18 +366,47 @@ export async function login(req, res, next) {
   return loginSqlite(req, res, next);
 }
 
-export function logout(req, res) {
-  const token = req.cookies?.pasconix_token || req.headers?.authorization?.replace('Bearer ', '');
+export async function logout(req, res) {
+  const token = req.cookies?.pasconix_token || req.headers?.authorization?.replace(/^Bearer\s+/i, '');
+  const sessionId = extractSessionIdFromToken(token);
+
+  let userId = req.user?.id;
+  if (!userId && token) {
+    try {
+      const decoded = jwt.decode(token);
+      userId = decoded?.sub || decoded?.id;
+    } catch {}
+  }
+
   if (token) {
     invalidateSessionCache(token);
   }
 
-  if (req.user?.id) {
+  if (userId) {
+    invalidateUserSessions(userId);
+    invalidateSessionLockCache(userId);
+
+    // Safely release the session lock only if the sessionId matches
+    if (sessionId) {
+      await releaseUserSession({ userId, sessionId });
+    }
+
+    // Revoke Supabase session if in supabase mode
+    if (process.env.DATA_BACKEND === 'supabase' && token && supabase) {
+      try {
+        if (typeof supabase.auth?.admin?.signOut === 'function') {
+          await supabase.auth.admin.signOut(token, 'local');
+        }
+      } catch (err) {
+        // Non-blocking cleanup
+      }
+    }
+
     logSecurityEvent({
-      userId: req.user.id,
+      userId,
       eventType: 'LOGOUT',
       resourceType: 'user',
-      resourceId: req.user.id,
+      resourceId: userId,
       req,
       status: 'SUCCESS'
     });
@@ -343,17 +472,26 @@ async function changePasswordSqlite(req, res, next, user, currentPassword, newPa
 
     // 3. Invalidate session cache
     invalidateUserSessions(user.id);
+    invalidateSessionLockCache(user.id);
     const oldToken = req.cookies?.pasconix_token || req.headers?.authorization?.replace(/^Bearer\s+/i, '');
     if (oldToken) {
       invalidateSessionCache(oldToken);
     }
 
     // 4. Issue fresh JWT and set cookie
+    const sessionId = crypto.randomUUID();
     const token = jwt.sign(
-      { id: user.id, role: user.role },
+      { id: user.id, role: user.role, sessionId },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
+    await claimUserSession({
+      userId: user.id,
+      sessionId,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      ip: req.ip || req.headers['x-forwarded-for'] || null,
+      ua: req.headers['user-agent'] || null
+    });
     res.cookie('pasconix_token', token, COOKIE_OPTIONS);
 
     // 5. Record security audit log
@@ -439,6 +577,7 @@ async function changePasswordSupabase(req, res, next, user, currentPassword, new
 
     // 3. Invalidate session cache for the user
     invalidateUserSessions(user.id);
+    invalidateSessionLockCache(user.id);
     const oldToken = req.cookies?.pasconix_token || req.headers?.authorization?.replace(/^Bearer\s+/i, '');
     if (oldToken) {
       invalidateSessionCache(oldToken);
@@ -453,6 +592,15 @@ async function changePasswordSupabase(req, res, next, user, currentPassword, new
     let token = null;
     if (newSessionData?.session?.access_token) {
       token = newSessionData.session.access_token;
+      const decoded = jwt.decode(token);
+      const sessionId = decoded?.session_id || token;
+      await claimUserSession({
+        userId: user.id,
+        sessionId,
+        expiresAt: decoded?.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ip: req.ip || req.headers['x-forwarded-for'] || null,
+        ua: req.headers['user-agent'] || null
+      });
       res.cookie('pasconix_token', token, COOKIE_OPTIONS);
     }
 

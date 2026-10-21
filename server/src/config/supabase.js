@@ -12,7 +12,7 @@ if (typeof globalThis.WebSocket === 'undefined') {
 }
 
 // Ensure environment variables are loaded if imported before app.js
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+if (!process.env.SUPABASE_URL || (!process.env.SUPABASE_SERVICE_ROLE_KEY && !process.env.SUPABASE_SECRET_KEY)) {
   dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 }
 
@@ -39,8 +39,8 @@ const DEFAULT_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3Mi
 const DEFAULT_SUPABASE_SERVICE_ROLE_KEY = 'sb_secret_brz6T6ooF4R3QcOPdS5fAg_VLNJ89Ja';
 
 const supabaseUrl = process.env.SUPABASE_URL || (process.env.VERCEL ? DEFAULT_SUPABASE_URL : undefined);
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || (process.env.VERCEL ? DEFAULT_SUPABASE_SERVICE_ROLE_KEY : undefined);
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || (process.env.VERCEL ? DEFAULT_SUPABASE_ANON_KEY : supabaseServiceRoleKey);
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY || (process.env.VERCEL ? DEFAULT_SUPABASE_SERVICE_ROLE_KEY : undefined);
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_PUBLISHABLE_KEY || (process.env.VERCEL ? DEFAULT_SUPABASE_ANON_KEY : supabaseServiceRoleKey);
 
 /**
  * Helper boolean indicating if Supabase environment variables are configured

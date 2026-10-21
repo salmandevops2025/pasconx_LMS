@@ -162,6 +162,16 @@ export function initDatabase() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS active_login_sessions (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      session_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_enrollments_student_course ON enrollments(student_id, course_id);
     CREATE INDEX IF NOT EXISTS idx_videos_course ON videos(course_id, order_index);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_videos_course_order_unique ON videos(course_id, order_index);
@@ -174,6 +184,8 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_meetings_status ON meetings(status, start_time);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON security_audit_logs(user_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_event ON security_audit_logs(event_type, created_at);
+    CREATE INDEX IF NOT EXISTS idx_active_sessions_session ON active_login_sessions(session_id);
+    CREATE INDEX IF NOT EXISTS idx_active_sessions_expires ON active_login_sessions(expires_at);
   `;
 
   db.exec(initStatements);
@@ -201,3 +213,65 @@ export function initDatabase() {
 
   return db;
 }
+
+/**
+ * SQLite Single Active Session Management
+ */
+export function claimSessionSqlite(userId, sessionId, expiresAt, ip = null, ua = null) {
+  if (!db || typeof db.transaction !== 'function') return true;
+
+  const tx = db.transaction(() => {
+    const existing = db.prepare('SELECT session_id, expires_at FROM active_login_sessions WHERE user_id = ?').get(userId);
+    const expiresAtIso = expiresAt instanceof Date ? expiresAt.toISOString() : new Date(expiresAt).toISOString();
+    const nowIso = new Date().toISOString();
+
+    if (!existing) {
+      db.prepare(`
+        INSERT INTO active_login_sessions (user_id, session_id, expires_at, ip_address, user_agent, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+      `).run(userId, sessionId, expiresAtIso, ip, ua);
+      return true;
+    }
+
+    // If existing session has expired: replace with new session
+    if (new Date(existing.expires_at) < new Date(nowIso)) {
+      db.prepare(`
+        UPDATE active_login_sessions
+        SET session_id = ?, expires_at = ?, ip_address = ?, user_agent = ?, created_at = datetime('now'), updated_at = datetime('now')
+        WHERE user_id = ?
+      `).run(sessionId, expiresAtIso, ip, ua, userId);
+      return true;
+    }
+
+    // If same session re-authenticating: renew expiry
+    if (existing.session_id === sessionId) {
+      db.prepare(`
+        UPDATE active_login_sessions
+        SET expires_at = ?, ip_address = COALESCE(?, ip_address), user_agent = COALESCE(?, user_agent), updated_at = datetime('now')
+        WHERE user_id = ?
+      `).run(expiresAtIso, ip, ua, userId);
+      return true;
+    }
+
+    // Active session already belongs to another device!
+    return false;
+  });
+
+  return tx();
+}
+
+export function releaseSessionSqlite(userId, sessionId) {
+  if (!db || typeof db.prepare !== 'function') return false;
+  const result = db.prepare('DELETE FROM active_login_sessions WHERE user_id = ? AND session_id = ?').run(userId, sessionId);
+  return result.changes > 0;
+}
+
+export function verifySessionSqlite(userId, sessionId) {
+  if (!db || typeof db.prepare !== 'function') return true;
+  const session = db.prepare('SELECT session_id, expires_at FROM active_login_sessions WHERE user_id = ?').get(userId);
+  if (!session) return false;
+  if (session.session_id !== sessionId) return false;
+  if (new Date(session.expires_at) <= new Date()) return false;
+  return true;
+}
+

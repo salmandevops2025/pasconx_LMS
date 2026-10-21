@@ -2,13 +2,14 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { db } from '../config/database.js';
 import { supabase } from '../config/supabase.js';
+import { verifyUserSession } from '../services/sessionLockService.js';
 
 export const JWT_SECRET = process.env.SESSION_SECRET || 'pasconix_default_jwt_secret_dev';
 
 /**
  * SQLite authentication verification (existing baseline & rollback path)
  */
-function authenticateSqliteUser(req, res, next, token) {
+async function authenticateSqliteUser(req, res, next, token) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
 
@@ -29,7 +30,21 @@ function authenticateSqliteUser(req, res, next, token) {
       });
     }
 
+    // Verify single-active-session lock
+    const sessionId = decoded.sessionId;
+    if (sessionId) {
+      const isSessionValid = await verifyUserSession({ userId: user.id, sessionId });
+      if (!isSessionValid) {
+        return res.status(401).json({
+          success: false,
+          code: 'SESSION_INVALID',
+          error: 'Your session has expired or was terminated because of a login on another device. Please log in again.'
+        });
+      }
+    }
+
     req.user = user;
+    req.sessionId = sessionId;
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
@@ -102,28 +117,42 @@ async function authenticateSupabaseUser(req, res, next, token) {
 
     const now = Date.now();
 
-    // 1. Inspect token expiration directly via JWT payload to prevent serving expired tokens
+    // 1. Inspect token expiration and session_id directly via JWT payload
     let jwtExpMs = Infinity;
+    let sessionId = null;
     try {
       const decoded = jwt.decode(token);
-      if (decoded && decoded.exp) {
-        jwtExpMs = decoded.exp * 1000;
-        if (now >= jwtExpMs) {
-          supabaseSessionCache.delete(tokenKey);
-          return res.status(401).json({
-            success: false,
-            error: 'Your session has expired. Please log in again.'
-          });
+      if (decoded) {
+        sessionId = decoded.session_id || token;
+        if (decoded.exp) {
+          jwtExpMs = decoded.exp * 1000;
+          if (now >= jwtExpMs) {
+            supabaseSessionCache.delete(tokenKey);
+            return res.status(401).json({
+              success: false,
+              error: 'Your session has expired. Please log in again.'
+            });
+          }
         }
       }
     } catch {
       // If decoding fails, proceed to Supabase validation
     }
 
-    // 2. Check in-memory cache
+    // 2. Check in-memory cache with session lock verification
     const cached = supabaseSessionCache.get(tokenKey);
-    if (cached && now < cached.expiresAt) {
+    if (cached && now < cached.expiresAt && cached.sessionId === sessionId) {
+      const lockValid = await verifyUserSession({ userId: cached.user.id, sessionId });
+      if (!lockValid) {
+        supabaseSessionCache.delete(tokenKey);
+        return res.status(401).json({
+          success: false,
+          code: 'SESSION_INVALID',
+          error: 'Your session has expired or was terminated because of a login on another device. Please log in again.'
+        });
+      }
       req.user = cached.user;
+      req.sessionId = sessionId;
       return next();
     }
 
@@ -168,6 +197,19 @@ async function authenticateSupabaseUser(req, res, next, token) {
       });
     }
 
+    // 5. Verify single-active-session lock
+    if (sessionId) {
+      const isSessionValid = await verifyUserSession({ userId: profile.id, sessionId });
+      if (!isSessionValid) {
+        supabaseSessionCache.delete(tokenKey);
+        return res.status(401).json({
+          success: false,
+          code: 'SESSION_INVALID',
+          error: 'Your session has expired or was terminated because of a login on another device. Please log in again.'
+        });
+      }
+    }
+
     req.user = {
       id: profile.id,
       name: profile.name,
@@ -175,9 +217,10 @@ async function authenticateSupabaseUser(req, res, next, token) {
       role: profile.role,
       status: profile.status
     };
+    req.sessionId = sessionId;
 
-    // 5. Store in cache bounded by whichever expires first: 60s TTL or token expiration
-    const expiresAt = Math.min(now + SESSION_CACHE_TTL_MS, jwtExpMs);
+    // 6. Store in cache bounded by whichever expires first: 30s TTL or token expiration
+    const expiresAt = Math.min(now + 30 * 1000, jwtExpMs);
 
     // Prune expired entries or if map exceeds 1000 entries
     if (supabaseSessionCache.size > 1000) {
@@ -190,6 +233,7 @@ async function authenticateSupabaseUser(req, res, next, token) {
 
     supabaseSessionCache.set(tokenKey, {
       user: req.user,
+      sessionId,
       cachedAt: now,
       expiresAt: expiresAt
     });

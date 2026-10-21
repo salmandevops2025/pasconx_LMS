@@ -8,7 +8,8 @@ import {
   Mail, 
   ArrowRight, 
   ShieldCheck, 
-  AlertCircle
+  AlertCircle,
+  ShieldAlert
 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -16,6 +17,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [turnstileToken, setTurnstileToken] = useState(null);
   const [error, setError] = useState('');
+  const [isSessionConflict, setIsSessionConflict] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { login } = useAuth();
@@ -25,6 +27,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e?.preventDefault();
     setError('');
+    setIsSessionConflict(false);
     setIsSubmitting(true);
 
     try {
@@ -33,7 +36,9 @@ export default function LoginPage() {
       const destination = res.user.role === 'ADMIN' ? '/admin/dashboard' : '/student/dashboard';
       navigate(destination, { replace: true });
     } catch (err) {
-      setError(err.message || 'Login failed. Please check your credentials.');
+      const conflict = err?.status === 409 || err?.data?.code === 'SESSION_ALREADY_ACTIVE';
+      setIsSessionConflict(conflict);
+      setError(err?.message || 'Login failed. Please check your credentials.');
     } finally {
       setIsSubmitting(false);
     }
@@ -72,12 +77,31 @@ export default function LoginPage() {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0 relative z-10">
         <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl py-8 px-6 shadow-2xl rounded-3xl sm:px-10 border border-white/50 dark:border-slate-800/80 transition-colors">
-          {error && (
+          {isSessionConflict ? (
+            <div className="mb-5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 p-4 shadow-sm animate-fade-in">
+              <div className="flex items-start gap-3">
+                <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5">
+                  <ShieldAlert className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <h4 className="text-sm font-bold text-amber-900 dark:text-amber-200">
+                    Account Active on Another Device
+                  </h4>
+                  <p className="mt-1 text-xs text-amber-800 dark:text-amber-300/90 leading-relaxed">
+                    {error}
+                  </p>
+                  <p className="mt-2 text-xs text-amber-700 dark:text-amber-400 font-medium bg-amber-100/70 dark:bg-amber-900/40 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800/40">
+                    💡 If you cannot access your other device, please contact the administrator to reset your session lock.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : error ? (
             <div className="mb-5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 p-3.5 flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
               <div className="text-sm font-medium text-rose-800 dark:text-rose-300">{error}</div>
             </div>
-          )}
+          ) : null}
 
           <form className="space-y-5" onSubmit={handleSubmit}>
             <div>
