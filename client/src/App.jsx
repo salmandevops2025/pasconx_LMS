@@ -21,10 +21,12 @@ import VideoWatchPage from './pages/student/VideoWatchPage.jsx';
 import StudentProfile from './pages/student/StudentProfile.jsx';
 import AllNotesPage from './pages/student/AllNotesPage.jsx';
 import StudentCalendarPage from './pages/student/StudentCalendarPage.jsx';
+import StudentResourcesPage from './pages/student/StudentResourcesPage.jsx';
 import AdminDashboard from './pages/admin/AdminDashboard.jsx';
 import StudentsManagement from './pages/admin/StudentsManagement.jsx';
 import CoursesManagement from './pages/admin/CoursesManagement.jsx';
 import VideosManagement from './pages/admin/VideosManagement.jsx';
+import ResourcesManagement from './pages/admin/ResourcesManagement.jsx';
 import EnrollmentsManagement from './pages/admin/EnrollmentsManagement.jsx';
 import MeetingsManagement from './pages/admin/MeetingsManagement.jsx';
 import AdminCalendarPage from './pages/admin/AdminCalendarPage.jsx';
@@ -103,6 +105,7 @@ export default function App() {
                 <Route path="/student/dashboard" element={<StudentDashboard />} />
                 <Route path="/student/courses" element={<MyCoursesPage />} />
                 <Route path="/student/recordings" element={<RecordingsPage />} />
+                <Route path="/student/resources" element={<StudentResourcesPage />} />
                 <Route path="/student/courses/:courseId" element={<CourseDetailPage />} />
                 <Route path="/student/watch/:videoId" element={<VideoWatchPage />} />
                 <Route path="/student/calendar" element={<StudentCalendarPage />} />
@@ -122,6 +125,7 @@ export default function App() {
                 <Route path="/admin/students" element={<StudentsManagement />} />
                 <Route path="/admin/courses" element={<CoursesManagement />} />
                 <Route path="/admin/videos" element={<VideosManagement />} />
+                <Route path="/admin/resources" element={<ResourcesManagement />} />
                 <Route path="/admin/enrollments" element={<EnrollmentsManagement />} />
                 <Route path="/admin/meetings" element={<MeetingsManagement />} />
                 <Route path="/admin/calendar" element={<AdminCalendarPage />} />

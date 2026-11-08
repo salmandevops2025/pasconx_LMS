@@ -15,9 +15,11 @@ import {
   Calendar,
   Video,
   Radio,
-  ExternalLink
+  ExternalLink,
+  FolderOpen
 } from 'lucide-react';
 import MeetingDetailsModal, { formatMeetingTimeIST } from '../../components/meetings/MeetingDetailsModal.jsx';
+import ResourceCard from '../../components/resources/ResourceCard.jsx';
 
 function normalizeThumbnailUrl(url) {
   if (!url || typeof url !== 'string') return '';
@@ -81,9 +83,13 @@ export default function StudentDashboard() {
   const [meetingsLoading, setMeetingsLoading] = useState(true);
   const [selectedMeeting, setSelectedMeeting] = useState(null);
   const [meetingError, setMeetingError] = useState('');
+  const [studentResources, setStudentResources] = useState([]);
 
   useEffect(() => {
     let isMounted = true;
+    api.get('/student/resources')
+      .then(res => { if (isMounted && res.success) setStudentResources(res.resources || []); })
+      .catch(() => {});
     api.get('/student/meetings?limit=4')
       .then(res => {
         if (isMounted && res.success) {
@@ -376,6 +382,33 @@ export default function StudentDashboard() {
           </div>
         )}
       </div>
+
+      {/* Study Materials & Resources Section */}
+      {studentResources && studentResources.length > 0 && (
+        <div className="space-y-4 pt-6 border-t border-slate-200 dark:border-slate-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <FolderOpen className="w-5 h-5 text-brand-600 dark:text-cyan-400" />
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                Study Materials & Resources
+              </h2>
+            </div>
+            <Link
+              to="/student/resources"
+              className="text-xs font-bold text-brand-600 dark:text-cyan-400 hover:underline flex items-center gap-1"
+            >
+              <span>View All Materials</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {studentResources.slice(0, 6).map((res) => (
+              <ResourceCard key={res.id} resource={res} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Expired Enrollments Section */}
       {expiredCourses.length > 0 && (

@@ -31,6 +31,15 @@ import {
   updateMeetingStatus,
   deleteMeeting
 } from '../controllers/meetingController.js';
+import {
+  getAdminResources,
+  getAdminResourceStats,
+  createResource,
+  updateResource,
+  deleteResource,
+  reorderResources,
+  previewResourceLink
+} from '../controllers/resourceController.js';
 import { getMaintenance, updateMaintenance } from '../controllers/systemController.js';
 import { authenticateUser, requireAdmin } from '../middleware/auth.js';
 
@@ -64,6 +73,15 @@ router.delete('/courses/:id', deleteCourse);
 router.get('/courses/:courseId/documents', getAdminCourseDocuments);
 router.post('/courses/:courseId/documents', createAdminCourseDocument);
 router.delete('/courses/:courseId/documents/:docId', deleteAdminCourseDocument);
+
+// External Study Materials & Resources Management
+router.get('/resources', getAdminResources);
+router.get('/resources/stats', getAdminResourceStats);
+router.post('/resources/preview', previewResourceLink);
+router.post('/resources', createResource);
+router.put('/resources/reorder', reorderResources);
+router.put('/resources/:id', updateResource);
+router.delete('/resources/:id', deleteResource);
 
 // Video Management
 router.get('/videos', getVideos);

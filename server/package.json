@@ -5,7 +5,7 @@
   "main": "src/server.js",
   "type": "module",
   "engines": {
-    "node": "26.x"
+    "node": "20.x"
   },
   "scripts": {
     "start": "node src/server.js",
@@ -13,6 +13,8 @@
     "seed": "node src/seed/seed.js",
     "test": "node --test src/tests/portal.test.js",
     "test:session": "node --test src/tests/sessionLock.test.js",
+    "test:resources": "node --test src/tests/resources.test.js",
+    "test:maintenance": "node --test src/tests/maintenance.test.js",
     "verify:env": "node src/config/envValidator.js"
   },
   "dependencies": {

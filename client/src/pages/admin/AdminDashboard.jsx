@@ -12,7 +12,8 @@ import {
   PlusCircle, 
   ShieldAlert,
   ArrowRight,
-  ExternalLink 
+  ExternalLink,
+  FolderOpen 
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -20,7 +21,8 @@ export default function AdminDashboard() {
     students: 0,
     courses: 0,
     videos: 0,
-    activeEnrollments: 0
+    activeEnrollments: 0,
+    resources: 0
   });
   const [recentEnrollments, setRecentEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +65,7 @@ export default function AdminDashboard() {
     { label: 'Registered Students', count: stats.students, icon: Users, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-900/60', link: '/admin/students' },
     { label: 'Active Courses', count: stats.courses, icon: BookOpen, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-900/60', link: '/admin/courses' },
     { label: 'Educational Videos', count: stats.videos, icon: Video, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-900/60', link: '/admin/videos' },
+    { label: 'Study Materials', count: stats.resources || 0, icon: FolderOpen, color: 'text-cyan-600 dark:text-cyan-400', bg: 'bg-cyan-50 dark:bg-cyan-950/50 border-cyan-200 dark:border-cyan-900/60', link: '/admin/resources' },
     { label: 'Active Enrollments', count: stats.activeEnrollments, icon: KeyRound, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-950/50 border-purple-200 dark:border-purple-900/60', link: '/admin/enrollments' },
   ];
 
@@ -106,6 +109,13 @@ export default function AdminDashboard() {
             + Add Video
           </Link>
           <Link
+            to="/admin/resources"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 shadow-2xs transition-colors"
+          >
+            <FolderOpen className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
+            + Study Material
+          </Link>
+          <Link
             to="/admin/enrollments"
             className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-sm transition-colors"
           >
@@ -122,7 +132,7 @@ export default function AdminDashboard() {
       )}
 
       {/* Stats Overview Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
         {statCards.map((card) => {
           const Icon = card.icon;
           return (

@@ -20,6 +20,10 @@ import {
   getStudentMeetings,
   getStudentMeetingDetail
 } from '../controllers/meetingController.js';
+import {
+  getStudentCourseResources,
+  getStudentAllResources
+} from '../controllers/resourceController.js';
 import { authenticateUser, requireStudent } from '../middleware/auth.js';
 import { checkCourseAccess, checkVideoAccess, checkDocumentAccess } from '../middleware/accessControl.js';
 
@@ -44,6 +48,10 @@ router.get('/courses/:courseId/documents', checkCourseAccess, getStudentCourseDo
 // Stream course document (authorized by checkDocumentAccess)
 router.get('/courses/:courseId/documents/:docId/view', checkDocumentAccess, streamStudentDocument);
 
+// External Study Materials & Resource Links
+router.get('/resources', getStudentAllResources);
+router.get('/courses/:courseId/resources', checkCourseAccess, getStudentCourseResources);
+
 // Specific video playback payload (authorized by checkVideoAccess)
 router.get('/videos/:videoId', checkVideoAccess, getStudentVideoPlayback);
 router.get('/videos/:videoId/play', checkVideoAccess, getStudentVideoPlayback);
@@ -66,4 +74,3 @@ router.get('/meetings', getStudentMeetings);
 router.get('/meetings/:id', getStudentMeetingDetail);
 
 export default router;
-

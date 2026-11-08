@@ -178,6 +178,33 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON security_audit_logs(user_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_event ON security_audit_logs(event_type, created_at);
 
+    CREATE TABLE IF NOT EXISTS course_resources (
+      id TEXT PRIMARY KEY,
+      course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+      module_id TEXT,
+      module_name TEXT,
+      title TEXT NOT NULL,
+      description TEXT,
+      resource_url TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      resource_category TEXT NOT NULL,
+      file_type TEXT NOT NULL DEFAULT 'PDF',
+      display_file_name TEXT,
+      access_type TEXT NOT NULL DEFAULT 'open_in_tab',
+      visibility TEXT NOT NULL DEFAULT 'all_enrolled',
+      display_order INTEGER NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      publish_status TEXT NOT NULL DEFAULT 'published',
+      created_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_course_resources_course_order ON course_resources(course_id, display_order ASC, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_course_resources_status ON course_resources(course_id, publish_status, is_active, visibility);
+    CREATE INDEX IF NOT EXISTS idx_course_resources_module ON course_resources(course_id, module_name);
+    CREATE INDEX IF NOT EXISTS idx_course_resources_category ON course_resources(course_id, resource_category);
+
     CREATE TABLE IF NOT EXISTS system_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,

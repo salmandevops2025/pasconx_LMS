@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../../api/client.js';
 import { StatusBadge } from '../../components/common/Badge.jsx';
+import ResourceCard from '../../components/resources/ResourceCard.jsx';
 import { 
   ArrowLeft, 
   Play, 
@@ -12,21 +13,33 @@ import {
   BookOpen, 
   Calendar,
   FileText,
-  Lock
+  Lock,
+  FolderOpen,
+  Layers
 } from 'lucide-react';
 
 export default function CourseDetailPage() {
   const { courseId } = useParams();
   const [data, setData] = useState(null);
+  const [resources, setResources] = useState([]);
+  const [groupedResources, setGroupedResources] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchCourse = async () => {
+    const fetchCourseAndResources = async () => {
       try {
-        const res = await api.get(`/student/courses/${courseId}`);
-        if (res.success) {
-          setData(res);
+        const [courseRes, resData] = await Promise.all([
+          api.get(`/student/courses/${courseId}`),
+          api.get(`/student/courses/${courseId}/resources`).catch(() => ({ success: false, resources: [] }))
+        ]);
+
+        if (courseRes.success) {
+          setData(courseRes);
+        }
+        if (resData.success) {
+          setResources(resData.resources || []);
+          setGroupedResources(resData.grouped_by_module || {});
         }
       } catch (err) {
         setError(err.message || 'Unable to access course.');
@@ -34,7 +47,7 @@ export default function CourseDetailPage() {
         setLoading(false);
       }
     };
-    fetchCourse();
+    fetchCourseAndResources();
   }, [courseId]);
 
   const formatDuration = (seconds) => {
@@ -116,7 +129,6 @@ export default function CourseDetailPage() {
 
       {/* Course Overview Banner */}
       <div className="bg-edtech-hero rounded-3xl p-6 sm:p-8 text-white shadow-xl border border-white/20 relative overflow-hidden space-y-6">
-        {/* Soft atmospheric ambient light glows */}
         <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-400/25 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute bottom-0 left-1/4 w-72 h-72 bg-purple-400/25 rounded-full blur-2xl pointer-events-none" />
 
@@ -172,7 +184,46 @@ export default function CourseDetailPage() {
         </div>
       </div>
 
-      {/* Course Documents & Labs Section */}
+      {/* External Study Materials & Resources Section */}
+      {resources && resources.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 transition-colors">
+              <FolderOpen className="w-5 h-5 text-brand-600 dark:text-cyan-400" />
+              External Study Materials & Resources ({resources.length})
+            </h2>
+            <Link
+              to="/student/resources"
+              className="text-xs font-bold text-brand-600 dark:text-cyan-400 hover:underline"
+            >
+              All Courses Materials &rarr;
+            </Link>
+          </div>
+
+          <div className="space-y-6">
+            {Object.entries(groupedResources).map(([moduleName, items]) => (
+              <div key={moduleName} className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700">
+                    {moduleName}
+                  </span>
+                  <span className="text-xs text-slate-400 font-medium">
+                    ({items.length} {items.length === 1 ? 'resource' : 'resources'})
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {items.map((res) => (
+                    <ResourceCard key={res.id} resource={res} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Legacy Protected Course Documents & Labs Section (if any) */}
       {documents && documents.length > 0 && (
         <div className="space-y-4">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2 transition-colors">
@@ -247,7 +298,6 @@ export default function CourseDetailPage() {
                   className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/80 dark:hover:bg-slate-800/60 transition-colors group"
                 >
                   <div className="flex items-start gap-4">
-                    {/* Number / Status Icon */}
                     <div
                       className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold transition-colors ${
                         isCompleted
